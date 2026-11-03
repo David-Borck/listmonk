@@ -1,0 +1,48 @@
+# Fork-only: builds the dbi/v7 branch into ghcr.io/david-borck/listmonk (amd64, the server's arch).
+# Tags: `latest` (what the suite's compose pulls) and the short commit hash (to pin or roll back).
+name: dbi-image
+on:
+  push:
+    branches: [dbi/v7]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # the Makefile reads the version from the last tag
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+
+      - name: Build binary with bundled frontend
+        run: make dist
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        run: |
+          IMAGE=ghcr.io/david-borck/listmonk
+          SHA=$(git rev-parse --short HEAD)
+          docker build \
+            --label org.opencontainers.image.source=https://github.com/${{ github.repository }} \
+            --label org.opencontainers.image.revision=${{ github.sha }} \
+            --label org.opencontainers.image.licenses=AGPL-3.0 \
+            -t "$IMAGE:$SHA" -t "$IMAGE:latest" .
+          docker push "$IMAGE:$SHA"
+          docker push "$IMAGE:latest"
